@@ -47,8 +47,6 @@ void setup()
 ```
 
 #### Opening, Closing, and Deleting a file
-
-Here is an example sketch showing how to open, write, close, and delete a file:
 ```C
 #include <SPI.h>
 #include "tefs.h"
