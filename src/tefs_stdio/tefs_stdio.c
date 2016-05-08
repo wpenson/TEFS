@@ -1,15 +1,27 @@
+/******************************************************************************/
+/**
+@file		tefs.c
+@author     Wade Penson
+@date		June, 2015
+@brief      TEFS C file interface.
+
+@copyright  Copyright 2015 Wade Penson
+
+@license    Licensed under the Apache License, Version 2.0 (the "License");
+            you may not use this file except in compliance with the License.
+            You may obtain a copy of the License at
+
+              http://www.apache.org/licenses/LICENSE-2.0
+
+            Unless required by applicable law or agreed to in writing, software
+            distributed under the License is distributed on an "AS IS" BASIS,
+            WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+            implied. See the License for the specific language governing
+            permissions and limitations under the License.
+*/
+/******************************************************************************/
+
 #include "tefs_stdio.h"
-
-int8_t
-t_fclose(
-	T_FILE *fp
-)
-{
-	tefs_close(&fp->f);
-	free(fp);
-
-	return 0;
-}
 
 T_FILE *
 t_fopen(
@@ -189,81 +201,58 @@ t_fopen(
 }
 
 int8_t
-t_feof(
+t_fclose(
 	T_FILE *fp
 )
 {
-	if (fp->eof == 1)
-	{
-#ifdef DEBUG
-		printf("EOF\n");
-#endif
+	tefs_close(&fp->f);
+	free(fp);
 
-		/* End of file has been reached. */
-		return -1;
-	}else
-	{
-#ifdef DEBUG
-		printf("NOT EOF\n");
-#endif
-
-		/* End of file has not been reached. */
-		return 0;
-	}
+	return 0;
 }
 
 int8_t
-t_fflush(
+t_remove(
+	char *file_name
+)
+{
+	return tefs_remove(file_name);
+}
+
+size_t
+t_fwrite(
+	void *ptr,
+	size_t size,
+	size_t count,
 	T_FILE *fp
 )
 {
-	tefs_flush(&fp->f);
+	uint32_t total_num_bytes = size * count;
+	uint32_t bytes_read = 0;
 
-	return 0;
-}
+	while (total_num_bytes - bytes_read >= 512 - fp->byte_address)
+	{
+		if (tefs_write(&fp->f, fp->page_address, (void *) (((char *) ptr) + bytes_read), 512 - fp->byte_address, fp->byte_address))
+		{
+			return bytes_read;
+		}
 
-int8_t
-t_fsetpos(
-	T_FILE *fp,
-	fpos_t *pos
-)
-{
-	uint32_t pos_page = *pos >> 9;
-	uint16_t pos_byte = *pos & 511;
-
-	/* Check if position is less than the size of the file. */
-	if (pos_page > fp->f.eof_page)
-	{
-		return -1;
-	}
-	if (pos_page == fp->f.eof_page && pos_byte > fp->f.eof_byte)
-	{
-		return -1;
-	}
-	else if (pos_page == fp->f.eof_page && pos_byte == fp->f.eof_byte)
-	{
-		fp->eof = 1;
-	}
-	else
-	{
-		fp->eof = 0;
+		bytes_read += 512 - fp->byte_address;
+		fp->page_address++;
+		fp->byte_address = 0;
 	}
 
-	fp->page_address = pos_page;
-	fp->byte_address = pos_byte;
+	if (total_num_bytes - bytes_read > 0)
+	{
+		if (tefs_write(&fp->f, fp->page_address, (void *) (((char *) ptr) + bytes_read), total_num_bytes - bytes_read, fp->byte_address))
+		{
+			return bytes_read;
+		}
 
-	return 0;
-}
+		fp->byte_address += total_num_bytes - bytes_read;
+	}
 
-int8_t
-t_fgetpos(
-	T_FILE *fp,
-	fpos_t *pos
-)
-{
-	*pos = (fp->page_address << 9) + fp->byte_address;
-
-	return 0;
+	return total_num_bytes;
 }
 
 size_t
@@ -316,6 +305,40 @@ t_fread(
 }
 
 int8_t
+t_feof(
+	T_FILE *fp
+)
+{
+	if (fp->eof == 1)
+	{
+#ifdef DEBUG
+		printf("EOF\n");
+#endif
+
+		/* End of file has been reached. */
+		return -1;
+	}else
+	{
+#ifdef DEBUG
+		printf("NOT EOF\n");
+#endif
+
+		/* End of file has not been reached. */
+		return 0;
+	}
+}
+
+int8_t
+t_fflush(
+	T_FILE *fp
+)
+{
+	tefs_flush(&fp->f);
+
+	return 0;
+}
+
+int8_t
 t_fseek(
 	T_FILE *fp,
 	uint32_t offset,
@@ -326,7 +349,7 @@ t_fseek(
 
 	if (whence == SEEK_SET || whence == SEEK_CUR)
 	{
-		//seek from current position
+		/* Seek from current position. */
 		if (whence == SEEK_CUR)
 		{
 			offset += (fp->page_address << 9) + fp->byte_address;
@@ -356,17 +379,61 @@ t_fseek(
 	{
 		fp->eof = 1;
 
-		if (offset > 0) 
+		if (offset > 0)
 		{
-			// Cannot seek past end of file
+			/* Cannot seek past end of file. */
 			return -1;
 		}
-			
+
 	}
 	else
 	{
 		return -1;
 	}
+
+	return 0;
+}
+
+int8_t
+t_fsetpos(
+	T_FILE *fp,
+	fpos_t *pos
+)
+{
+	uint32_t pos_page = *pos >> 9;
+	uint16_t pos_byte = *pos & 511;
+
+	/* Check if position is less than the size of the file. */
+	if (pos_page > fp->f.eof_page)
+	{
+		return -1;
+	}
+	if (pos_page == fp->f.eof_page && pos_byte > fp->f.eof_byte)
+	{
+		return -1;
+	}
+	else if (pos_page == fp->f.eof_page && pos_byte == fp->f.eof_byte)
+	{
+		fp->eof = 1;
+	}
+	else
+	{
+		fp->eof = 0;
+	}
+
+	fp->page_address = pos_page;
+	fp->byte_address = pos_byte;
+
+	return 0;
+}
+
+int8_t
+t_fgetpos(
+	T_FILE *fp,
+	fpos_t *pos
+)
+{
+	*pos = (fp->page_address << 9) + fp->byte_address;
 
 	return 0;
 }
@@ -379,50 +446,6 @@ t_ftell(
 	return (fp->page_address << 9) + fp->byte_address;
 }
 
-size_t
-t_fwrite(
-	void *ptr,
-	size_t size,
-	size_t count,
-	T_FILE *fp
-)
-{
-	uint32_t total_num_bytes = size * count;
-	uint32_t bytes_read = 0;
-
-	while (total_num_bytes - bytes_read >= 512 - fp->byte_address)
-	{
-		if (tefs_write(&fp->f, fp->page_address, (void *) (((char *) ptr) + bytes_read), 512 - fp->byte_address, fp->byte_address))
-		{
-			return bytes_read;
-		}
-
-		bytes_read += 512 - fp->byte_address;
-		fp->page_address++;
-		fp->byte_address = 0;
-	}
-
-	if (total_num_bytes - bytes_read > 0)
-	{
-		if (tefs_write(&fp->f, fp->page_address, (void *) (((char *) ptr) + bytes_read), total_num_bytes - bytes_read, fp->byte_address))
-		{
-			return bytes_read;
-		}
-
-		fp->byte_address += total_num_bytes - bytes_read;
-	}
-
-	return total_num_bytes;
-}
-
-int8_t
-t_remove(
-	char *file_name
-)
-{
-	return tefs_remove(file_name);
-}
-
 void
 t_rewind(
 	T_FILE *fp
@@ -431,12 +454,4 @@ t_rewind(
 	fp->eof = 0;
 	fp->page_address = 0;
 	fp->byte_address = 0;
-}
-
-int8_t
-t_file_exists(
-	char *file_name
-)
-{
-	return tefs_exists(file_name);
 }

@@ -1,7 +1,7 @@
 /******************************************************************************/
 /**
 @file		tefs.h
-@author     Wade H. Penson
+@author     Wade Penson
 @date		July, 2015
 @brief      TEFS (Tiny Embedded File System) header.
 @details	TEFS is a file system designed specifically for embedded
@@ -70,8 +70,7 @@ extern uint8_t sd_spi_dirty_write;
 #define DIV_BY_POW_2_EXP(expression, exponent) 	((expression) >> (exponent))
 #define MOD_BY_POW_2(expression, constant) 		((expression) & ((constant) - 1))
 
-// TODO: Finish implementing these features
-//#define TEFS_WRITE_ANYWHERE
+// TODO: Finish implementing continuous support
 //#define TEFS_CONTINUOUS_SUPPORT
 
 #define TEFS_INFO_SECTION_SIZE				((uint8_t) 1)

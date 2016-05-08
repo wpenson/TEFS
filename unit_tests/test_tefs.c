@@ -1,26 +1,49 @@
+/******************************************************************************/
+/**
+@file		test_tefs.c
+@author     Wade Penson
+@date		June, 2015
+@brief      Unit tests for TEFS.
+
+@copyright  Copyright 2015 Wade Penson
+
+@license    Licensed under the Apache License, Version 2.0 (the "License");
+            you may not use this file except in compliance with the License.
+            You may obtain a copy of the License at
+
+              http://www.apache.org/licenses/LICENSE-2.0
+
+            Unless required by applicable law or agreed to in writing, software
+            distributed under the License is distributed on an "AS IS" BASIS,
+            WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+            implied. See the License for the specific language governing
+            permissions and limitations under the License.
+*/
+/******************************************************************************/
+
 #include "planck_unit/src/planckunit.h"
 #include "../src/tefs/tefs.h"
 
 #define CHIP_SELECT_PIN 4
 
-static uint8_t data[512];
-static uint8_t buffer[512];
-static uint8_t address_size;
+static uint8_t	data[512];
+static uint8_t	buffer[512];
+static uint8_t	address_size;
 static uint32_t state_section_size;
 static uint32_t state_section_size_in_bytes;
-static uint8_t info_section_size;
+static uint8_t	info_section_size;
 static uint32_t i;
 static uint32_t j;
 static uint32_t four_byte_buffer;
-static uint8_t byte_buffer;
+static uint8_t	byte_buffer;
 static uint16_t current_byte;
 static uint32_t current_page;
-static char *memory_error = "Ran out of memory";
+static char		*memory_error = "Ran out of memory";
 
 typedef struct {
-	char *name;
+	char	*name;
 	int32_t hash;
-	file_t *file;
+	file_t	*file;
 } file_info_t;
 
 static file_info_t files[] =
@@ -30,12 +53,12 @@ static file_info_t files[] =
 };
 
 typedef struct {
-	uint32_t num_pages;
-	uint16_t page_size;
-	uint16_t block_size;
-	uint8_t hash_size;
-	uint16_t meta_data_size;
-	uint16_t max_file_name_size;
+	uint32_t	num_pages;
+	uint16_t	page_size;
+	uint16_t	block_size;
+	uint8_t		hash_size;
+	uint16_t	meta_data_size;
+	uint16_t	max_file_name_size;
 } format_info_t;
 
 static format_info_t *format_info;

@@ -1,7 +1,9 @@
 # TEFS - Tiny Embedded File System
-TEFS is a lightweight, alternative file system designed for microcontrollers that is not FAT. It is written in C and it has a small RAM and program space footprint. It utilizes a custom SD/MMC SPI communications library to read from and write an SD card. Specifically, it can be adapted to work with block based storage device that have an FTL such as SD cards, etc. It works with Arduino out of the box and can easily be ported to different platforms.
+TEFS is a lightweight, alternative file system designed for microcontrollers which is not FAT. It is written in C and it has a small RAM and program space footprint. It utilizes a custom SD/MMC SPI communications library to read from and write an SD card. Specifically, it can be adapted to work with block based storage device that have an FTL such as SD cards, etc. It works with Arduino out of the box and can easily be ported to different platforms.
 
 TEFS uses a tree index structure instead a structure such as the File Allocation Table for files so it has some advantages and disadvantages when compared to FAT. From comparing benchmarks of TEFS against FAT filesystems on microcontrollers, FAT performs better when the are fewer files, smaller files, and files are created and removed frequently. However, TEFS performs better when there are many files, larger files, and files are opened and closed often but not created and removed as often. TEFS also has a smaller code size than the Arduino SdFat and FatFs libraries. It can also have long file names as well as custom metadata for each file.
+
+> **Note:** More information and documentation about TEFS will be added soon.
 
 ## Usage
 If you want to use TEFS with the Arduino IDE, you must put the required source files in a single folder with your `.ino` file. A python flatting script is provided that does this for you.
@@ -54,7 +56,7 @@ void setup()
 {
     // Error checking and formatting removed for brevity.
 
-    // Create a T_FILE file struture pointer and then open a file with the name "file.txt". If the file doesn't already exist, it will be created.
+    // Create a file_t file struture and then open a file with the name "file.txt". If the file doesn't already exist, it will be created.
     file_t file;
     tefs_open(&file, "file.txt");
   

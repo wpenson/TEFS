@@ -1,7 +1,7 @@
 /******************************************************************************/
 /**
 @file		tefs.c
-@author     Wade H. Penson
+@author     Wade Penson
 @date		June, 2015
 @brief      TEFS (Tiny Embedded File System) implementation.
 
@@ -71,11 +71,16 @@ static uint8_t	is_read_write_continuous			= 0;
 #endif
 
 /**
-@brief
+@brief		Finds the directory entry corresponding to the file name. The page
+ 			address along with the byte in that page is returned for the
+ 			location in the metadata file. If
 
 @param[in]	file_name			Name of file as char array with null bit.
-								Format is 8.3.
-@param[out]	meta_block_address	Address of the meta block for the file if found.
+@param[out]	dir_page_address	Page in the metadata file where the metadata entry is.
+@param[out]	dir_byte_in_page	Byte in the page of the file where the metadata entry is.
+@param		file_operation		0 == find but return an error if the file was not found
+ 								1 == find + create file if doesn't exist
+ 								2 == remove directory entry for the file
 
 @return		An error code as defined by one of the TEFS_ERR_* definitions.
 */
@@ -90,7 +95,7 @@ tefs_find_file_directory_entry(
 /**
 @brief		Reserves a block and returns the address to the start of the block.
 
-@param[out]	*block_addres	Reserved block address
+@param[out]	*block_address	Reserved block address
 
 @return		An error code as defined by one of the TEFS_ERR_* definitions.
 */
@@ -102,7 +107,7 @@ tefs_reserve_device_block(
 /**
 @brief	Releases a block.
 
-@param	block_addres	The address of the block to release.
+@param	block_address	The address of the block to release.
 
 @return	An error code as defined by one of the TEFS_ERR_* definitions.
 */
@@ -114,7 +119,7 @@ tefs_release_device_block(
 /**
 @brief	Erases a block and fills it with zeros.
 
-@param	block_addres	The address of the block to erase.
+@param	block_address	The address of the block to erase.
 
 @return	An error code as defined by one of the TEFS_ERR_* definitions.
 */
@@ -137,6 +142,16 @@ tefs_find_next_empty_block(
 );
 #endif
 
+/**
+@brief		This maps a logical page in the file to the location of the
+ 			pointer in the root index block.
+
+@param		page						The logical page in the file.
+
+@param[out]	*page_in_root_index			The page in the root index where the pointer is.
+
+@param[out]	*byte_in_root_index_page	The byte in the page of the root index where the pointer is.
+*/
 static void
 tefs_map_page_to_root_index_address(
 	uint32_t 	page,
@@ -144,6 +159,16 @@ tefs_map_page_to_root_index_address(
 	uint16_t 	*byte_in_root_index_page
 );
 
+/**
+@brief		This maps a logical page in the file to the location of the
+ 			pointer in the child index block.
+
+@param		page						The logical page in the file.
+
+@param[out]	*page_in_child_index		The page in the child index where the pointer is.
+
+@param[out]	*byte_in_child_index_page	The byte in the page of the child index where the pointer is.
+*/
 static void
 tefs_map_page_to_child_index_address(
 	uint32_t 	page,
@@ -151,6 +176,13 @@ tefs_map_page_to_child_index_address(
 	uint16_t 	*byte_in_child_index_page
 );
 
+/**
+@brief	Writes out the file size to the directory entry of the file.
+
+@param	file	A file_t structure.
+
+@return	An error code as defined by one of the TEFS_ERR_* definitions.
+*/
 static int8_t
 tefs_update_file_size(
 	file_t *file
@@ -169,7 +201,7 @@ tefs_power_of_two_exponent(
 );
 
 /**
-@brief	Gets the data from the information section of the card.
+@brief	Gets the data from the information section of the card and loads it into memory.
 
 @return	An error code as defined by one of the TEFS_ERR_* definitions.
 */
@@ -179,7 +211,11 @@ tefs_load_card_data(
 );
 
 /**
-@brief	DJB2a hash function.
+@brief	DJB2a hash function that hashes strings.
+
+@param	*str	A string with a null byte at the end.
+
+@return	The hash of the string.
 */
 static uint32_t
 hash_string(
@@ -200,13 +236,16 @@ tefs_format_device(
 	if (erase_before_format)
 	{
 #if defined(USE_SD)
+        /* Erase the storage device before formatting. */
 		if (sd_spi_erase_all())
 		{
 			return TEFS_ERR_ERASE;
 		}
 #endif
+        /* TODO: Add erase for dataflash */
 	}
 
+	/* Determine the size of an address. */
 	if (num_pages < POW_2_TO(16))
 	{
 		address_size = 2;
@@ -225,8 +264,11 @@ tefs_format_device(
 
 #if defined(USE_SD)
 	/* Calculate the state section size. */
+	/* TODO: Get the number of bits instead of bytes */
 	//uint32_t state_section_size_in_bits = ((format_info->number_of_pages - info_section_size) - 1) / (format_info->block_size) + 1;
-	uint32_t state_section_size_in_bytes = DIV_BY_POW_2_EXP(num_pages - TEFS_INFO_SECTION_SIZE, block_size_exponent + 3);
+	uint32_t state_section_size_in_bytes =
+		DIV_BY_POW_2_EXP(num_pages - TEFS_INFO_SECTION_SIZE, block_size_exponent + 3);
+
 	state_section_size = DIV_BY_POW_2_EXP(state_section_size_in_bytes - 1, page_size_exponent) + 1;
 #endif
 
@@ -329,12 +371,16 @@ tefs_format_device(
 	current_byte += 4;
 #endif
 
+	/* Write out the metadata for the hash entries file and meta data file. */
 	uint8_t i;
 	for (i = 0; i < 2; i++) {
 		int8_t response;
 
-		uint32_t child_index_block_address = MULT_BY_POW_2_EXP((uint32_t) (i * 2), block_size_exponent) + (1 + state_section_size);
-		uint32_t data_block_address = MULT_BY_POW_2_EXP((uint32_t) (i * 2 + 1), block_size_exponent) + (1 + state_section_size);
+		/* Get the child index block address and the data block address for the file. */
+		uint32_t child_index_block_address = MULT_BY_POW_2_EXP((uint32_t) (i * 2), block_size_exponent) +
+												(1 + state_section_size);
+		uint32_t data_block_address = MULT_BY_POW_2_EXP((uint32_t) (i * 2 + 1), block_size_exponent) +
+										(1 + state_section_size);
 
 		/* Set file size to 0 for hash file directory entry. */
 		uint32_t zero = 0;
@@ -353,13 +399,6 @@ tefs_format_device(
 		current_byte += TEFS_DIR_EOF_BYTE_SIZE;
 
 		/* Write root index block address to the information page. */
-#if defined(TEFS_WRITE_ANYWHERE)
-        if ((response = tefs_erase_block(child_index_block_address)))
-		{
-			return response;
-		}
-#endif
-
 		if (device_write(0, &child_index_block_address, address_size, current_byte))
 		{
 			return TEFS_ERR_WRITE;
@@ -367,24 +406,15 @@ tefs_format_device(
 
 		current_byte += 4;
 
+		/* Write the first data block address to the beginning of the root index. */
 		if (device_write(child_index_block_address, &data_block_address, address_size, 0))
 		{
 			return TEFS_ERR_WRITE;
 		}
-
-		if ((response = tefs_erase_block(data_block_address)))
-		{
-			return response;
-		}
 	}
 
+	/* Write out the state section. Set the first four bits as 0 since the */
 #if defined(USE_SD)
-	// /* Write out ones to the state section. */
-	// if (sd_spi_write_continuous_start(1, 0))
-	// {
-	// 	return TEFS_ERR_WRITE;
-	// }
-
 	uint32_t current_page;
 	data = 0xFF;
 
@@ -406,17 +436,7 @@ tefs_format_device(
 			{
 				return TEFS_ERR_WRITE;
 			}
-
-			// if (sd_spi_write_continuous(&data, 1, current_byte))
-			// {
-			// 	return TEFS_ERR_WRITE;
-			// }
 		}
-
-		// if (sd_spi_write_continuous_next())
-		// {
-		// 	return TEFS_ERR_WRITE;
-		// }
 	}
 
 	data = 0x0F;
@@ -431,6 +451,7 @@ tefs_format_device(
 		return TEFS_ERR_WRITE;
 	}
 
+	/* Address size is set to 0 so that the data is loaded from the card into memory. */
 	address_size = 0;
 
 	return TEFS_ERR_OK;
@@ -444,7 +465,7 @@ tefs_open(
 {
 	int8_t response;
 
-	/* Get info from card if it has not been obtained yet. */
+	/* Load the data from the information page if it has not been previously loaded. */
 	if (address_size == 0)
 	{
 		if ((response = tefs_load_card_data()))
@@ -453,6 +474,7 @@ tefs_open(
 		}
 	}
 
+	/* Get the size of the file name. Return an error if it exceeds the max length. */
 	uint16_t file_name_size = 0;
 	while (file_name[file_name_size] != '\0')
 	{
@@ -464,18 +486,19 @@ tefs_open(
 		return TEFS_ERR_FILE_NAME_TOO_LONG;
 	}
 
-	if ((response = tefs_find_file_directory_entry(file_name, &(file->directory_page), &(file->directory_byte), 1)) != TEFS_NEW_FILE && response != TEFS_ERR_OK)
+	if ((response = tefs_find_file_directory_entry(file_name, &(file->directory_page), &(file->directory_byte), 1)) !=
+		TEFS_NEW_FILE && response != TEFS_ERR_OK)
 	{
 		return response;
 	}
 
 	file->root_index_block_address		= 0;
-	file->child_index_block_address	= 0;
-	file->data_block_address		= 0;
+	file->child_index_block_address		= 0;
+	file->data_block_address			= 0;
 
 	uint16_t meta_entry_byte = file->directory_byte;
 
-	if (response == TEFS_NEW_FILE)
+	if (response == TEFS_NEW_FILE) /* Create a new file */
 	{
 		uint8_t zero = 0;
 
@@ -490,14 +513,16 @@ tefs_open(
 		/* Set file size to 0 for directory entry. */
 		file->eof_page = 0;
 		file->eof_byte = 0;
-		if ((response = tefs_write(&metadata, file->directory_page, &(file->eof_page), TEFS_DIR_EOF_PAGE_SIZE, meta_entry_byte)))
+		if ((response = tefs_write(&metadata, file->directory_page, &(file->eof_page),
+								   TEFS_DIR_EOF_PAGE_SIZE, meta_entry_byte)))
 		{
 			return response;
 		}
 
 		meta_entry_byte += TEFS_DIR_EOF_PAGE_SIZE;
 
-		if ((response = tefs_write(&metadata, file->directory_page, &(file->eof_byte), TEFS_DIR_EOF_BYTE_SIZE, meta_entry_byte)))
+		if ((response = tefs_write(&metadata, file->directory_page, &(file->eof_byte),
+								   TEFS_DIR_EOF_BYTE_SIZE, meta_entry_byte)))
 		{
 			return response;
 		}
@@ -509,15 +534,9 @@ tefs_open(
 		{
 			return response;
 		}
-		
-#if defined(TEFS_WRITE_ANYWHERE)
-		if ((response = tefs_erase_block(file->child_index_block_address)))
-		{
-			return response;
-		}
-#endif
 
-		if ((response = tefs_write(&metadata, file->directory_page, &(file->child_index_block_address), 4, meta_entry_byte)))
+		if ((response = tefs_write(&metadata, file->directory_page, &(file->child_index_block_address),
+								   4, meta_entry_byte)))
 		{
 			return response;
 		}
@@ -532,6 +551,7 @@ tefs_open(
 
 		meta_entry_byte += file_name_size;
 
+		/* Write out the file name and pad it up until the max length. */
 		uint8_t i;
 		for (i = 0; i < max_file_name_size - file_name_size; i++)
 		{
@@ -581,19 +601,21 @@ tefs_open(
 			return TEFS_ERR_WRITE;
 		}
 	}
-	else
+	else /* Open an existing file. */
 	{
 		meta_entry_byte += TEFS_DIR_STATUS_SIZE;
 
 		/* Read the file size. */
-		if ((response = tefs_read(&metadata, file->directory_page, &(file->eof_page), TEFS_DIR_EOF_PAGE_SIZE, meta_entry_byte)))
+		if ((response = tefs_read(&metadata, file->directory_page, &(file->eof_page),
+								  TEFS_DIR_EOF_PAGE_SIZE, meta_entry_byte)))
 		{
 			return response;
 		}
 
 		meta_entry_byte += TEFS_DIR_EOF_PAGE_SIZE;
 
-		if ((response = tefs_read(&metadata, file->directory_page, &(file->eof_byte), TEFS_DIR_EOF_BYTE_SIZE, meta_entry_byte)))
+		if ((response = tefs_read(&metadata, file->directory_page, &(file->eof_byte),
+								  TEFS_DIR_EOF_BYTE_SIZE, meta_entry_byte)))
 		{
 			return response;
 		}
@@ -601,7 +623,8 @@ tefs_open(
 		meta_entry_byte += TEFS_DIR_EOF_BYTE_SIZE;
 
 		/* Read the file pointer. */
-		if ((response = tefs_read(&metadata, file->directory_page, &(file->root_index_block_address), address_size, meta_entry_byte)))
+		if ((response = tefs_read(&metadata, file->directory_page, &(file->root_index_block_address),
+								  address_size, meta_entry_byte)))
 		{
 			return response;
 		}
@@ -646,6 +669,7 @@ tefs_exists(
 {
 	int8_t response;
 
+	/* Load the data from the information page if it has not been previously loaded. */
 	if (address_size == 0)
 	{
 		if ((response = tefs_load_card_data()))
@@ -662,6 +686,7 @@ tefs_exists(
 		return 0;
 	}
 
+	/* Check if the status for the file's directory entry is set to IN_USE. */
 	uint8_t status;
 	if ((response = tefs_read(&metadata, directory_page, &status, 1, directory_byte)))
 	{
@@ -696,6 +721,7 @@ tefs_remove(
 {
 	int8_t response;
 
+	/* Load the data from the information page if it has not been previously loaded. */
 	if (address_size == 0)
 	{
 		if ((response = tefs_load_card_data()))
@@ -713,81 +739,17 @@ tefs_remove(
 	}
 
 	uint32_t root_index_block_address = 0;
-	
-	if ((response = tefs_read(&metadata, directory_page, &root_index_block_address, TEFS_DIR_ROOT_INDEX_ADDRESS_SIZE, directory_byte + TEFS_DIR_STATUS_SIZE + TEFS_DIR_EOF_BYTE_SIZE + TEFS_DIR_EOF_PAGE_SIZE)))
+
+	/* Get the root index block address for the file. */
+	if ((response = tefs_read(&metadata, directory_page, &root_index_block_address, TEFS_DIR_ROOT_INDEX_ADDRESS_SIZE,
+							  directory_byte + TEFS_DIR_STATUS_SIZE + TEFS_DIR_EOF_BYTE_SIZE + TEFS_DIR_EOF_PAGE_SIZE)))
 	{
 		return response;
 	}
 
-	/* Release data blocks that are in the file. */
-	uint8_t status = TEFS_EMPTY;
 	uint16_t root_index_current_byte;
 	uint16_t root_index_current_page;
 
-#if defined(TEFS_WRITE_ANYWHERE)
-	for (root_index_current_page = 0;
-		 root_index_current_page < block_size;
-		 root_index_current_page++)
-	{
-		for (root_index_current_byte = 0;
-			 root_index_current_byte < page_size;
-			 root_index_current_byte += address_size)
-		{
-			uint32_t child_index_block_address = 0;
-
-			if (device_read(root_index_block_address, &child_index_block_address,
-							address_size, root_index_current_byte))
-			{
-				return TEFS_ERR_READ;
-			}
-
-			if (child_index_block_address != TEFS_DELETED &&
-				child_index_block_address != TEFS_EMPTY)
-			{
-				uint16_t child_index_current_page;
-
-				for (child_index_current_page = 0;
-					 child_index_current_page < block_size;
-					 child_index_current_page++)
-				{
-					uint32_t child_index_current_byte;
-
-					for (child_index_current_byte = 0;
-						 child_index_current_byte < page_size;
-						 child_index_current_byte += address_size)
-					{
-						uint32_t data_block_address = 0;
-
-						if (device_read(child_index_block_address,
-										&data_block_address, address_size,
-										child_index_current_byte))
-						{
-							return TEFS_ERR_READ;
-						}
-
-						if (data_block_address != TEFS_DELETED &&
-							data_block_address != TEFS_EMPTY)
-						{
-							/* Release data block. */
-							int8_t response;
-							if ((response = tefs_release_device_block(data_block_address)))
-							{
-								return response;
-							}
-						}
-					}
-				}
-
-				/* Release child index block. */
-				int8_t response;
-				if ((response = tefs_release_device_block(child_index_block_address)))
-				{
-					return response;
-				}
-			}
-		}
-	}
-#else
 	uint32_t eof_page;
 
 	/* Read the file size. */
@@ -806,6 +768,7 @@ tefs_remove(
 
 	int8_t past_end = 0;
 
+	/* Release all blocks that are in the file. */
 	for (root_index_current_page = 0;
 		 root_index_current_page <= page_in_root_index && !past_end;
 		 root_index_current_page++)
@@ -871,7 +834,6 @@ tefs_remove(
 			}
 		}
 	}
-#endif
 
 	if (eof_page >= MULT_BY_POW_2_EXP(block_size, page_size_exponent - address_size_exponent))
 	{
@@ -883,7 +845,7 @@ tefs_remove(
 	}
 
 	/* Change file status to deleted. */
-	status = TEFS_DELETED;
+	uint8_t status = TEFS_DELETED;
 
 	if ((response = tefs_write(&metadata, directory_page, &status, 1, directory_byte)))
 	{
@@ -907,9 +869,8 @@ tefs_write(
 	uint16_t 	byte_offset
 )
 {
-#if !defined(TEFS_WRITE_ANYWHERE)
 	uint8_t is_new_page = 0;
-		
+
 	if (file_page_address == file->eof_page)
 	{
 		if (byte_offset > file->eof_byte)
@@ -944,13 +905,6 @@ tefs_write(
 					return response;
 				}
 
-#if defined(TEFS_WRITE_ANYWHERE)
-				if ((response = tefs_erase_block(file->root_index_block_address)))
-				{
-					return response;
-				}
-#endif
-
 				if (device_write(file->root_index_block_address, &(file->child_index_block_address), address_size, 0))
 				{
 					return TEFS_ERR_WRITE;
@@ -977,7 +931,6 @@ tefs_write(
 	{
 		return TEFS_ERR_WRITE_PAST_END;
 	}
-#endif
 
 	/* Check if page address is in the same block as the current data block. 
 	   If it is, write the data. Otherwise, get the new data block address
@@ -1018,36 +971,6 @@ tefs_write(
 
 			file->child_index_block_address = 0;
 
-#if defined(TEFS_WRITE_ANYWHERE)
-			if (device_read(file->root_index_block_address + page_in_root_index,
-							&(file->child_index_block_address), address_size,
-							byte_in_root_index_page))
-			{
-				return TEFS_ERR_READ;
-			}
-
-			if (file->child_index_block_address == TEFS_EMPTY ||
-				file->child_index_block_address == TEFS_DELETED)
-			{
-				int8_t response;
-				if ((response = tefs_reserve_device_block(&(file->child_index_block_address))))
-				{
-					return response;
-				}
-
-				if ((response = tefs_erase_block(file->child_index_block_address)))
-				{
-					return response;
-				}
-
-				if (device_write(file->root_index_block_address + page_in_root_index,
-								 &(file->child_index_block_address),
-								 address_size, byte_in_root_index_page))
-				{
-					return TEFS_ERR_WRITE;
-				}
-			}
-#else
 			if (file->is_file_size_consistent)
 			{
 				if (device_read(file->root_index_block_address + page_in_root_index,
@@ -1079,7 +1002,6 @@ tefs_write(
 
 				sd_spi_dirty_write = 0;
 			}
-#endif
 		}
 
 		/* Get the data block from the child index block. */
@@ -1089,32 +1011,6 @@ tefs_write(
 
 		file->data_block_address = 0;
 
-#if defined(TEFS_WRITE_ANYWHERE)
-		if (device_read(file->child_index_block_address + page_in_child_index,
-						&(file->data_block_address), address_size,
-						byte_in_child_index_page))
-		{
-			return TEFS_ERR_READ;
-		}
-
-		if (file->data_block_address == TEFS_EMPTY ||
-			file->data_block_address == TEFS_DELETED)
-		{
-			int8_t response;
-
-			if ((response = tefs_reserve_device_block(&(file->data_block_address))))
-			{
-				return response;
-			}
-
-			if (device_write(file->child_index_block_address + page_in_child_index,
-							 &(file->data_block_address), address_size,
-							 byte_in_child_index_page))
-			{
-				return TEFS_ERR_WRITE;
-			}
-		}
-#else
 		if (file->is_file_size_consistent)
 		{
 			if (device_read(file->child_index_block_address + page_in_child_index,
@@ -1146,7 +1042,6 @@ tefs_write(
 
 			sd_spi_dirty_write = 0;
 		}
-#endif
 
 		sd_spi_dirty_write = is_new_page;
 
@@ -1162,19 +1057,26 @@ tefs_write(
 
 #if defined(UPDATE_FS_PAGE_CONSISTENCY)
 	/* Update file size. */
-	if (!is_file_size_consistent && file_page_address != file->current_page_number)
+	if (!file->is_file_size_consistent && file_page_address != file->current_page_number)
 	{
 		int8_t err;
 		if (err = tefs_update_file_size(file))
 		{
 			return err;
 		}
+
+		file->is_file_size_consistent = 1;
 	}
 #elif defined(UPDATE_FS_RECORD_CONSISTENCY)
-	int8_t err;
-	if (err = tefs_update_file_size(file))
+	if (!file->is_file_size_consistent)
 	{
-		return err;
+		int8_t err;
+		if (err = tefs_update_file_size(file))
+		{
+			return err;
+		}
+
+		file->is_file_size_consistent = 1;
 	}
 #endif
 
@@ -1217,7 +1119,7 @@ tefs_read(
 {
 #if defined(UPDATE_FS_PAGE_CONSISTENCY)
 	/* Update file size if necessary. */
-	if (!is_file_size_consistent && file_page_address != file->current_page_number)
+	if (!file->is_file_size_consistent && file_page_address != file->current_page_number)
 	{
 		int8_t err;
 		if ((err = tefs_update_file_size(file)))
@@ -1227,9 +1129,6 @@ tefs_read(
 	}
 #endif
 
-#if !defined(TEFS_WRITE_ANYWHERE)
-//	uint8_t eof_reached = 0;
-
 	if (file_page_address == file->eof_page)
 	{
 		if (byte_offset > file->eof_byte)
@@ -1238,9 +1137,6 @@ tefs_read(
 		}
 		else if (byte_offset + number_of_bytes > file->eof_byte)
 		{
-//			number_of_bytes = file->eof_byte - byte_offset;
-//			eof_reached = 1;
-
 			return TEFS_ERR_EOF;
 		}
 	}
@@ -1248,7 +1144,6 @@ tefs_read(
 	{
 		return TEFS_ERR_EOF;
 	}
-#endif
 
 	/* Check if page address is in the same block as the current data block. 
 	   If it is, read the data. Otherwise, get the new data block address
@@ -1289,14 +1184,6 @@ tefs_read(
 			{
 				return TEFS_ERR_READ;
 			}
-
-#if defined(TEFS_WRITE_ANYWHERE)
-			if (file->child_index_block_address == TEFS_EMPTY ||
-				file->child_index_block_address == TEFS_DELETED)
-			{
-				return TEFS_ERR_UNRELEASED_BLOCK;
-			}
-#endif
 		}
 
 		/* Get the data block from the child index block. */
@@ -1312,14 +1199,6 @@ tefs_read(
 		{
 			return TEFS_ERR_READ;
 		}
-
-#if defined(TEFS_WRITE_ANYWHERE)
-		if (file->data_block_address == TEFS_EMPTY ||
-			file->data_block_address == TEFS_DELETED)
-		{
-			return TEFS_ERR_UNRELEASED_BLOCK;
-		}
-#endif
 
 		if (device_read(file->data_block_address, buffer, number_of_bytes,
 						byte_offset))
@@ -1487,7 +1366,7 @@ tefs_find_file_directory_entry(
 	char 		*file_name,
 	uint32_t 	*dir_page_address,
 	uint16_t 	*dir_byte_in_page,
-	uint8_t 	file_operation    /* 0 == find, 1 == find + create file if doesn't exist, 2 == remove */
+	uint8_t 	file_operation
 )
 {
 	uint32_t name_hash_value = hash_string(file_name);
@@ -1809,20 +1688,10 @@ tefs_find_next_empty_block(
 	uint16_t current_byte = (uint16_t) MOD_BY_POW_2(DIV_BY_POW_2_EXP(*state_section_bit, 3), page_size);
 	uint8_t byte_buffer = 0;
 
-	// if (sd_spi_read_continuous_start(current_page + 1))
-	// {
-	// 	return TEFS_ERR_READ;
-	// }
-
 	while (current_page < state_section_size)
 	{
 		while (current_byte < page_size)
 		{
-			// if (sd_spi_read_continuous(&byte_buffer, 1, current_byte))
-			// {
-			// 	return TEFS_ERR_READ;
-			// }
-
 			if (sd_spi_read(current_page + 1, &byte_buffer, 1, current_byte))
 			{
 				return TEFS_ERR_READ;
@@ -1842,30 +1711,15 @@ tefs_find_next_empty_block(
 				*state_section_bit = MULT_BY_POW_2_EXP(current_page, page_size_exponent + 3) +
 									 MULT_BY_POW_2_EXP(current_byte, 3) + count;
 
-				// if (sd_spi_read_continuous_stop())
-				// {
-				// 	return TEFS_ERR_READ;
-				// }
-
 				return TEFS_ERR_OK;
 			}
 
 			current_byte++;
 		}
 
-		// if (sd_spi_read_continuous_next())
-		// {
-		// 	return TEFS_ERR_READ;
-		// }
-
 		current_page++;
 		current_byte = 0;
 	}
-
-	// if (sd_spi_read_continuous_stop())
-	// {
-	// 	return TEFS_ERR_READ;
-	// }
 
 	is_block_pool_empty = 1;
 	return TEFS_ERR_OK;
