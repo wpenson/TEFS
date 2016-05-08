@@ -1,12 +1,12 @@
 # TEFS - Tiny Embedded File System
-TEFS is a lightweight, alternative file system designed for microcontrollers that is not FAT. It is written in C and it has a small RAM and program space footprint. It utilizes a custom SD/MMC SPI communications library to write and read data to and from an SD card. It works with Arduino out of the box and can easily be ported to different platforms. Specifically, it can be adapted to work with block based storage device that have an FTL such as SD cards, etc.
+TEFS is a lightweight, alternative file system designed for microcontrollers that is not FAT. It is written in C and it has a small RAM and program space footprint. It utilizes a custom SD/MMC SPI communications library to read from and write an SD card. Specifically, it can be adapted to work with block based storage device that have an FTL such as SD cards, etc. It works with Arduino out of the box and can easily be ported to different platforms.
 
-TEFS uses a tree index structure instead a structure such as the File Allocation Table so it has some trade-offs compared to FAT. From comparing benchmarks of TEFS against FAT filesystems on microcontrollers, FAT performs better when the are fewer files, smaller files, and files are created and removed frequently. However, TEFS performs better when there are many files, larger files, and files are opened and closed often but not created and removed as often. TEFS also has a smaller code size and can have long file names as well as custom metadata for each file.
+TEFS uses a tree index structure instead a structure such as the File Allocation Table for files so it has some advantages and disadvantages when compared to FAT. From comparing benchmarks of TEFS against FAT filesystems on microcontrollers, FAT performs better when the are fewer files, smaller files, and files are created and removed frequently. However, TEFS performs better when there are many files, larger files, and files are opened and closed often but not created and removed as often. TEFS also has a smaller code size than the Arduino SdFat and FatFs libraries. It can also have long file names as well as custom metadata for each file.
 
 ## Usage
 If you want to use TEFS with the Arduino IDE, you must put the required source files in a single folder with your `.ino` file. A python flatting script is provided that does this for you.
 
-If you are not using the Arduino IDE, you must add the code specific for your platform in the `src/tefs/sd_spi/src/device/sd_spi_platform_dependencies.c` file if you are using an SD card.
+If you are not using the Arduino IDE, you must add the code specific to your platform in the `src/tefs/sd_spi/src/device/sd_spi_platform_dependencies.c` file if you are using an SD card. A CMake configuration is also provided that you can adapt and use for compiling to your microcontroller.
 
 TEFS can be used either as a block level interface or as an interface similar to the standard input/output file operations in C. If you wish to just use the block level interface exclusively, delete `tefs_stdio.h` and `tefs_stdio.c` from your project folder.
 
