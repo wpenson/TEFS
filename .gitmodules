@@ -1,0 +1,6 @@
+[submodule "unit_tests/planck_unit"]
+	path = unit_tests/planck_unit
+	url = git@github.com:iondbproject/PlanckUnit.git
+[submodule "src/tefs/sd_spi"]
+	path = src/tefs/sd_spi
+	url = git@github.com:wpenson/SD_SPI_Communication_Library.git

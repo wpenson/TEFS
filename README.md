@@ -29,7 +29,7 @@ void setup()
 {
 	Serial.begin(115200);
 
-	if (sd_raw_init(CHIP_SELECT_PIN))
+	if (sd_spi_init(CHIP_SELECT_PIN))
 	{
 		Serial.print(F("SD card failed to initialize.\n"));
 		return;
@@ -40,13 +40,13 @@ void setup()
 	
 	/* Page size of 512 bytes, 64 page block or cluster size (32KB per block or cluster), 
 	   key size of 1 (allows up to 255 files), and pre-erase card before format. */
-	tefs_format_device(sd_raw_card_size(), 512, 64, 1, 1);
+	tefs_format_device(sd_spi_card_size(), 512, 64, 1, 1);
 	
 	Serial.print(F("Format Successful!\n"));
 }
 ```
 
-#### Opening, Closing, and Deleting a file
+#### Opening, Closing, and Deleting files
 ```C
 #include <SPI.h>
 #include "tefs.h"
