@@ -71,7 +71,7 @@ static uint8_t	is_read_write_continuous			= 0;
 #endif
 
 /**
-@brief		
+@brief
 
 @param[in]	file_name			Name of file as char array with null bit.
 								Format is 8.3.
