@@ -3,8 +3,6 @@ TEFS is a lightweight, alternative file system designed for microcontrollers whi
 
 TEFS uses a tree index structure instead a structure such as the File Allocation Table for files so it has some advantages and disadvantages when compared to FAT. From comparing benchmarks of TEFS against FAT filesystems on microcontrollers, FAT performs better when the are fewer files, smaller files, and files are created and removed frequently. However, TEFS performs better when there are many files, larger files, and files are opened and closed often but not created and removed as often. TEFS also has a smaller code size than the Arduino SdFat and FatFs libraries. It can also have long file names as well as custom metadata for each file.
 
-> **Note:** More information and documentation about TEFS will be added soon.
-
 ## Usage
 If you want to use TEFS with the Arduino IDE, you must put the required source files in a single folder with your `.ino` file. A python flatting script is provided that does this for you.
 
